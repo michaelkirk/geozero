@@ -91,6 +91,35 @@ mod test {
     }
 
     #[test]
+    fn from_geojson_feature_collection_of_with_one_feature() {
+        let geojson = GeoJsonString(
+            json!({
+                "type": "FeatureCollection",
+                "features": [
+                    {
+                        "type": "Feature",
+                        "properties": {
+                            "population": 100
+                        },
+                        "geometry": {
+                            "type": "Point",
+                            "coordinates": [10.0, 45.0]
+                        }
+                    },
+                ]
+            })
+            .to_string(),
+        );
+
+        let actual = geojson.to_geo().unwrap();
+        let expected =
+            Geometry::GeometryCollection(GeometryCollection::<f64>(vec![
+                Point::new(10.0, 45.0).into()
+            ]));
+        assert_eq!(expected, actual);
+    }
+
+    #[test]
     fn from_geojson_feature_collection_geometry_collection_and_point() {
         let geojson = GeoJsonString(
             json!({
