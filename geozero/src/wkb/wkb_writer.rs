@@ -434,4 +434,78 @@ mod test {
             &hex::decode("47500003E61000009A9999999999F13F9A9999999999F13F9A9999999999F13F9A9999999999F13F01010000009A9999999999F13F9A9999999999F13F").unwrap()
         );
     }
+
+    #[test]
+    fn feature_collection_of_one_to_ewkb() {
+        use crate::geojson::GeoJsonString;
+        use serde_json::json;
+
+        let geojson = GeoJsonString(
+            json!({
+                "type": "FeatureCollection",
+                "features": [
+                    {
+                        "type": "Feature",
+                        "properties": {
+                            "population": 100
+                        },
+                        "geometry": {
+                            "type": "Point",
+                            "coordinates": [10.0, -20.0]
+                        }
+                    },
+                ]
+            })
+            .to_string(),
+        );
+
+        let wkb = geojson.to_ewkb(CoordDimensions::default(), None).unwrap();
+        assert_eq!(
+            &wkb,
+            // SELECT 'GEOMETRYCOLLECTION(POINT(10 -20))'
+            &hex::decode("0107000000010000000101000000000000000000244000000000000034C0").unwrap()
+        );
+    }
+
+    #[test]
+    fn feature_collection_to_ewkb() {
+        use crate::geojson::GeoJsonString;
+        use serde_json::json;
+
+        let geojson = GeoJsonString(
+            json!({
+                "type": "FeatureCollection",
+                "features": [
+                    {
+                        "type": "Feature",
+                        "properties": {
+                            "population": 100
+                        },
+                        "geometry": {
+                            "type": "Point",
+                            "coordinates": [10.0, -20.0]
+                        }
+                    },
+                    {
+                        "type": "Feature",
+                        "properties": {
+                            "population": 100
+                        },
+                        "geometry": {
+                            "type": "Point",
+                            "coordinates": [30.0, -40.0]
+                        }
+                    },
+                ]
+            })
+            .to_string(),
+        );
+
+        let wkb = geojson.to_ewkb(CoordDimensions::default(), None).unwrap();
+        assert_eq!(
+            &wkb,
+            // SELECT 'GEOMETRYCOLLECTION(POINT(10 -20),POINT(30 -40))'::geometry;
+            &hex::decode("0107000000020000000101000000000000000000244000000000000034C001010000000000000000003E4000000000000044C0").unwrap()
+        );
+    }
 }
