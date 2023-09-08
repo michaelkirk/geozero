@@ -61,12 +61,13 @@ async fn transform<P: FeatureProcessor>(args: Cli, processor: &mut P) -> Result<
         if path_in.extension().and_then(OsStr::to_str) != Some("fgb") {
             panic!("Remote acccess is only supported for .fgb input")
         }
-        let ds = HttpFgbReader::open(&args.input).await?;
+        let mut ds = HttpFgbReader::open(&args.input).await.expect("todo");
         let mut ds = if let Some(bbox) = &args.extent {
             ds.select_bbox(bbox.minx, bbox.miny, bbox.maxx, bbox.maxy)
-                .await?
+                .await
+                .expect("todo")
         } else {
-            ds.select_all().await?
+            ds.select_all().await.expect("todo")
         };
         ds.process_features(processor).await
     } else {
@@ -122,6 +123,7 @@ async fn process(args: Cli) -> Result<()> {
     }
     Ok(())
 }
+
 fn set_dimensions(processor: &mut SvgWriter<&mut BufWriter<File>>, extent: Option<Extent>) {
     if let Some(extent) = extent {
         processor.set_dimensions(extent.minx, extent.miny, extent.maxx, extent.maxy, 800, 600);
