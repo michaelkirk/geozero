@@ -1,5 +1,6 @@
 use clap::Parser;
 use flatgeobuf::{FgbReader, FgbWriter, GeometryType, HttpFgbReader};
+use geomedea_geozero::geomedea;
 use geozero::csv::{CsvReader, CsvWriter};
 use geozero::error::{GeozeroError, Result};
 use geozero::geojson::{GeoJsonLineReader, GeoJsonReader, GeoJsonWriter};
@@ -58,20 +59,36 @@ fn parse_extent(src: &str) -> std::result::Result<Extent, ParseFloatError> {
 async fn transform<P: FeatureProcessor>(args: Cli, processor: &mut P) -> Result<()> {
     let path_in = Path::new(&args.input);
     if path_in.starts_with("http:") || path_in.starts_with("https:") {
-        if path_in.extension().and_then(OsStr::to_str) != Some("fgb") {
-            panic!("Remote access is only supported for .fgb input")
-        }
-        let ds = HttpFgbReader::open(&args.input)
-            .await
-            .map_err(fgb_to_geozero_err)?;
-        let mut ds = if let Some(bbox) = &args.extent {
-            ds.select_bbox(bbox.minx, bbox.miny, bbox.maxx, bbox.maxy)
+        if path_in.extension().and_then(OsStr::to_str) == Some("fgb") {
+            let ds = HttpFgbReader::open(&args.input)
                 .await
-                .map_err(fgb_to_geozero_err)?
+                .map_err(fgb_to_geozero_err)?;
+            let mut ds = if let Some(bbox) = &args.extent {
+                ds.select_bbox(bbox.minx, bbox.miny, bbox.maxx, bbox.maxy)
+                    .await
+                    .map_err(fgb_to_geozero_err)?
+            } else {
+                ds.select_all().await.map_err(fgb_to_geozero_err)?
+            };
+            ds.process_features(processor).await
+        } else if path_in.extension().and_then(OsStr::to_str) == Some("geomedea") {
+            let mut ds = geomedea::HttpReader::open(&args.input)
+                .await
+                .map_err(geomedea_to_geozero_err)?;
+            let mut feature_stream = if let Some(bbox) = &args.extent {
+                let a = geomedea::LngLat::degrees(bbox.minx, bbox.miny);
+                let b = geomedea::LngLat::degrees(bbox.maxx, bbox.maxy);
+                let bounds = geomedea::Bounds::from_corners(&a, &b);
+                ds.select_bbox(&bounds)
+                    .await
+                    .map_err(geomedea_to_geozero_err)?
+            } else {
+                ds.select_all().await.map_err(geomedea_to_geozero_err)?
+            };
+            geomedea_geozero::process_geomedea(&mut feature_stream, processor).await
         } else {
-            ds.select_all().await.map_err(fgb_to_geozero_err)?
-        };
-        ds.process_features(processor).await
+            panic!("Remote access is not supported for this input")
+        }
     } else {
         let mut filein = BufReader::new(File::open(path_in)?);
         match path_in.extension().and_then(OsStr::to_str) {
@@ -99,6 +116,19 @@ async fn transform<P: FeatureProcessor>(args: Cli, processor: &mut P) -> Result<
                 ds.process_features(processor)
             }
             Some("wkt") => GeozeroDatasource::process(&mut WktReader(&mut filein), processor),
+            Some("geomedea") => {
+                let ds = geomedea_geozero::GeomedeaReader::new(&mut filein)
+                    .map_err(geomedea_to_geozero_err)?;
+                let mut feature_iter = if let Some(bbox) = &args.extent {
+                    let a = geomedea::LngLat::degrees(bbox.minx, bbox.miny);
+                    let b = geomedea::LngLat::degrees(bbox.maxx, bbox.maxy);
+                    let bounds = geomedea::Bounds::from_corners(&a, &b);
+                    ds.select_bbox(&bounds).map_err(geomedea_to_geozero_err)?
+                } else {
+                    ds.select_all().map_err(geomedea_to_geozero_err)?
+                };
+                GeozeroDatasource::process(&mut feature_iter, processor)
+            }
             _ => panic!("Unknown input file extension"),
         }
     }
@@ -122,6 +152,12 @@ async fn process(args: Cli) -> Result<()> {
             let mut processor = SvgWriter::new(&mut fout, true);
             set_dimensions(&mut processor, args.extent);
             transform(args, &mut processor).await?;
+        }
+        Some("geomedea") => {
+            let is_compressed = true;
+            let mut writer = geomedea_geozero::GeomedeaWriter::new(&mut fout, is_compressed)?;
+            transform(args, &mut writer).await?;
+            writer.finish()?;
         }
         _ => panic!("Unknown output file extension"),
     }
@@ -152,6 +188,19 @@ fn fgb_to_geozero_err(fgb_err: flatgeobuf::Error) -> GeozeroError {
             GeozeroError::Dataset(format!("Invalid Flatbuffer: {e}"))
         }
         flatgeobuf::Error::IO(io) => GeozeroError::IoError(io),
+    }
+}
+
+fn geomedea_to_geozero_err(gmd_err: geomedea::Error) -> GeozeroError {
+    match gmd_err {
+        geomedea::Error::Bincode(bincode_err) => {
+            GeozeroError::Dataset(format!("bincode err: {bincode_err}"))
+        }
+        geomedea::Error::IO(io_err) => GeozeroError::IoError(io_err),
+        geomedea::Error::FeatureCountMismatch { .. } => {
+            GeozeroError::Dataset(format!("feature count mismatch: {gmd_err}"))
+        }
+        geomedea::Error::HTTP(http_err) => GeozeroError::HttpError(http_err.to_string()),
     }
 }
 

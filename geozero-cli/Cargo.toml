@@ -20,4 +20,7 @@ clap.workspace = true
 env_logger.workspace = true
 flatgeobuf.workspace = true
 geozero = { workspace = true, default-features = true, features = ["with-csv"] }
+# waiting on release
+# geomedea_geozero = { path = "../../geomedea/geomedea_geozero" }
+geomedea_geozero = { git = "https://github.com/michaelkirk/geomedea", branch = "mkirk/geozero-cli-integration" }
 tokio = { workspace = true, default-features = true, features = ["full"] }
