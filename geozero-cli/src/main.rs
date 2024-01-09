@@ -20,7 +20,7 @@ struct Cli {
     #[arg(long)]
     csv_geometry_column: Option<String>,
 
-    /// Geometries within extent
+    /// Filter geometries by bounding box: min_x,min_y,max_x,max_y
     #[arg(short, long, value_parser = parse_extent)]
     extent: Option<Extent>,
 
@@ -44,7 +44,7 @@ fn parse_extent(src: &str) -> std::result::Result<Extent, ParseFloatError> {
         .split(',')
         .map(|v| {
             v.parse()
-                .expect("Error parsing 'extent' as list of float values")
+                .expect("Error parsing 'extent' as a comma separated list of float values")
         })
         .collect();
     Ok(Extent {
