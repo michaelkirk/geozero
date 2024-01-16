@@ -21,3 +21,6 @@ env_logger.workspace = true
 flatgeobuf.workspace = true
 geozero = { workspace = true, default-features = true, features = ["with-csv"] }
 tokio = { workspace = true, default-features = true, features = ["full"] }
+# Awaiting a new geozero-shp release... but we might as well release geozero first since there is a pending geozero
+# release, and _then_ release a new geozero-shp, and _then_ we can update this dep to point to the published version.
+geozero-shp = {  path = "../geozero-shp" }

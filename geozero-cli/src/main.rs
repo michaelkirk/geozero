@@ -6,6 +6,7 @@ use geozero::geojson::{GeoJsonLineReader, GeoJsonReader, GeoJsonWriter};
 use geozero::svg::SvgWriter;
 use geozero::wkt::{WktReader, WktWriter};
 use geozero::{FeatureProcessor, GeozeroDatasource};
+use geozero_shp::Reader as ShpReader;
 use std::ffi::OsStr;
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
@@ -98,6 +99,21 @@ async fn transform<P: FeatureProcessor>(args: Cli, processor: &mut P) -> Result<
             Some("jsonl") | Some("geojsonl") => {
                 GeozeroDatasource::process(&mut GeoJsonLineReader::new(filein), processor)
             }
+            Some("shp") => {
+                // To infer the path to the .dbf for property data we need to use `path_in`
+                // instead of the `filein` used by other readers
+                let shp_reader = ShpReader::from_path(path_in).map_err(shp_to_geozero_err)?;
+                let feature_iter = shp_reader
+                    .iter_features(processor)
+                    .map_err(shp_to_geozero_err)?;
+                // Shapefile processing is different from most other formats.
+                // Rather than exposing something that implement DataSource it has a custom iterator that accepts a
+                // processor. So we need to iterate and check for errors manually here.
+                for next in feature_iter {
+                    next.map_err(shp_to_geozero_err)?;
+                }
+                Ok(())
+            }
             Some("wkt") => GeozeroDatasource::process(&mut WktReader(&mut filein), processor),
             _ => panic!("Unknown input file extension"),
         }
@@ -152,6 +168,14 @@ fn fgb_to_geozero_err(fgb_err: flatgeobuf::Error) -> GeozeroError {
             GeozeroError::Dataset(format!("Invalid Flatbuffer: {e}"))
         }
         flatgeobuf::Error::IO(io) => GeozeroError::IoError(io),
+    }
+}
+
+fn shp_to_geozero_err(shp_err: geozero_shp::Error) -> GeozeroError {
+    match shp_err {
+        geozero_shp::Error::IoError(e) => GeozeroError::IoError(e),
+        geozero_shp::Error::GeozeroError(e) => e,
+        other => GeozeroError::Dataset(other.to_string()),
     }
 }
 
