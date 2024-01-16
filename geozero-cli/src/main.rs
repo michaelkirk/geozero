@@ -82,12 +82,6 @@ async fn transform<P: FeatureProcessor>(args: Cli, processor: &mut P) -> Result<
                 let mut ds = CsvReader::new(&geometry_column_name, &mut filein);
                 GeozeroDatasource::process(&mut ds, processor)
             }
-            Some("json") | Some("geojson") => {
-                GeozeroDatasource::process(&mut GeoJsonReader(filein), processor)
-            }
-            Some("jsonl") | Some("geojsonl") => {
-                GeozeroDatasource::process(&mut GeoJsonLineReader::new(filein), processor)
-            }
             Some("fgb") => {
                 let ds = FgbReader::open(&mut filein).map_err(fgb_to_geozero_err)?;
                 let mut ds = if let Some(bbox) = &args.extent {
@@ -97,6 +91,12 @@ async fn transform<P: FeatureProcessor>(args: Cli, processor: &mut P) -> Result<
                     ds.select_all().map_err(fgb_to_geozero_err)?
                 };
                 ds.process_features(processor)
+            }
+            Some("json") | Some("geojson") => {
+                GeozeroDatasource::process(&mut GeoJsonReader(filein), processor)
+            }
+            Some("jsonl") | Some("geojsonl") => {
+                GeozeroDatasource::process(&mut GeoJsonLineReader::new(filein), processor)
             }
             Some("wkt") => GeozeroDatasource::process(&mut WktReader(&mut filein), processor),
             _ => panic!("Unknown input file extension"),
@@ -108,21 +108,21 @@ async fn process(args: Cli) -> Result<()> {
     let mut fout = BufWriter::new(File::create(&args.dest)?);
     match args.dest.extension().and_then(OsStr::to_str) {
         Some("csv") => transform(args, &mut CsvWriter::new(&mut fout)).await?,
-        Some("wkt") => transform(args, &mut WktWriter::new(&mut fout)).await?,
-        Some("json") | Some("geojson") => {
-            transform(args, &mut GeoJsonWriter::new(&mut fout)).await?
-        }
         Some("fgb") => {
             let mut fgb =
                 FgbWriter::create("fgb", GeometryType::Unknown).map_err(fgb_to_geozero_err)?;
             transform(args, &mut fgb).await?;
             fgb.write(&mut fout).map_err(fgb_to_geozero_err)?;
         }
+        Some("json") | Some("geojson") => {
+            transform(args, &mut GeoJsonWriter::new(&mut fout)).await?
+        }
         Some("svg") => {
             let mut processor = SvgWriter::new(&mut fout, true);
             set_dimensions(&mut processor, args.extent);
             transform(args, &mut processor).await?;
         }
+        Some("wkt") => transform(args, &mut WktWriter::new(&mut fout)).await?,
         _ => panic!("Unknown output file extension"),
     }
     Ok(())
